@@ -1,0 +1,117 @@
+# Issue Triage: Finding Closeable Issues
+
+Instructions for scanning a GitHub repository's open issues to find ones that can be closed because they've been implemented or become irrelevant.
+
+## Core Principle
+
+Every closure proposal must be backed by verified evidence. False positives waste maintainer time and erode trust. It is better to miss a closeable issue than to incorrectly propose closing one that is still valid.
+
+## Step-by-step Process
+
+### 1. Use the GraphQL closingIssuesReferences API first
+
+This is the most reliable signal. It finds merged PRs that used GitHub closing keywords (`closes`, `fixes`, `resolves`) linked to still-open issues:
+
+```bash
+gh api graphql -f query='{
+  repository(owner:"OWNER", name:"REPO") {
+    pullRequests(states:MERGED, last:100, orderBy:{field:CREATED_AT, direction:DESC}) {
+      nodes {
+        number title mergedAt
+        closingIssuesReferences(first:10) {
+          nodes { number title state }
+        }
+      }
+      pageInfo { startCursor hasPreviousPage }
+    }
+  }
+}' --jq '.data.repository.pullRequests.nodes[] | select(.closingIssuesReferences.nodes | length > 0) | {pr: .number, prTitle: .title, mergedAt: .mergedAt, issues: [.closingIssuesReferences.nodes[] | select(.state == "OPEN") | {number: .number, title: .title}]} | select(.issues | length > 0)'
+```
+
+Use cursor-based pagination to cover the full PR history. Any open issues found here were auto-closed by GitHub and then **intentionally reopened by maintainers** — these should generally be left open unless circumstances have changed.
+
+### 2. Check issue timelines for cross-referenced merged PRs
+
+For each open issue, check if merged PRs reference it:
+
+```bash
+gh api repos/OWNER/REPO/issues/{number}/timeline \
+  --jq '[.[] | select(.event == "cross-referenced") | select(.source.issue.pull_request != null) | select(.source.issue.state == "closed") | {pr: .source.issue.number, title: .source.issue.title}]'
+```
+
+This finds PRs that mention the issue but didn't use closing keywords. These require deeper investigation — a mention is not a fix.
+
+### 3. Validate every candidate
+
+For every issue-PR pair that looks like a match, you **must** perform all of the following checks before proposing closure.
+
+#### Check A: Verify the PR was actually merged
+
+```bash
+gh pr view {PR_NUMBER} --repo OWNER/REPO --json state,mergedAt
+```
+
+The `state` must be `MERGED`. A PR with state `CLOSED` was closed without merging — its changes are **not** in the codebase. Do not propose closing an issue based on an unmerged PR.
+
+**Common mistake:** The timeline API returns cross-references from closed (unmerged) PRs with `source.issue.state == "closed"`. A closed PR is not the same as a merged PR. Always verify explicitly.
+
+#### Check B: Verify the PR was merged AFTER the issue was created
+
+```bash
+gh pr view {PR_NUMBER} --repo OWNER/REPO --json mergedAt
+gh issue view {ISSUE_NUMBER} --repo OWNER/REPO --json createdAt
+```
+
+If the PR was merged before the issue was created, the issue was opened **despite** that PR existing. This means the PR does not resolve the issue — the author already knew about the PR and still felt the issue was necessary. This applies even when the time difference is small (minutes or seconds).
+
+#### Check C: Verify the issue was not previously auto-closed and reopened
+
+If a merged PR used a closing keyword for an issue, GitHub would have auto-closed it. If the issue is currently open, it was reopened by a maintainer who determined the PR did not fully resolve it. Check the issue timeline for reopen events:
+
+```bash
+gh api repos/OWNER/REPO/issues/{number}/timeline \
+  --jq '[.[] | select(.event == "reopened") | {actor: .actor.login, date: .created_at}]'
+```
+
+Issues that were auto-closed and reopened should generally remain open.
+
+#### Check D: Verify the PR actually addresses the issue's concern
+
+Read both the issue body and the PR body/description:
+
+```bash
+gh issue view {ISSUE_NUMBER} --repo OWNER/REPO --json body
+gh pr view {PR_NUMBER} --repo OWNER/REPO --json body
+```
+
+Watch out for:
+- **Partial fixes**: PRs that say "partially resolves", "part of", "fixes some of", or "partially targeting" do not fully close an issue.
+- **Related but different**: A PR that touches the same area of code but solves a different problem. Title similarity is not sufficient evidence.
+- **Multi-part issues**: Issues with checkboxes, numbered stages, or multiple requests where the PR only addresses some of them.
+
+### 4. Title matching is not evidence
+
+Never propose closing an issue solely because a PR title seems related. PR and issue titles can look similar while addressing different aspects of the same area. Always verify through the checks above.
+
+### 5. Batch efficiently but validate individually
+
+When scanning hundreds of issues, it's appropriate to use batch API calls and parallel agents for the initial scan. But the validation step (Checks A-D) must be done for each individual candidate — do not skip validation to save time.
+
+## Writing Closure Comments
+
+When proposing closure:
+- Reference the specific merged PR(s) with `#NUMBER`
+- Briefly explain why the PR resolves the issue
+- For medium-confidence cases, explicitly ask the maintainer to verify
+- Use the `proposed_for_closure` label (if the repo uses one) rather than closing directly
+
+## Checklist Before Proposing Closure
+
+For each issue you want to propose closing, confirm:
+
+- [ ] The referenced PR has `state: MERGED` (not just `CLOSED`)
+- [ ] The PR `mergedAt` date is after the issue `createdAt` date
+- [ ] The issue was not previously auto-closed and then reopened by a maintainer
+- [ ] The PR body/description addresses the specific concern in the issue body
+- [ ] The PR is not a partial fix (look for "partially", "part of", "some of")
+- [ ] You have read both the issue body and PR body, not just titles
