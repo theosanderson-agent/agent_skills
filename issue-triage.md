@@ -8,29 +8,7 @@ Every closure proposal must be backed by verified evidence. False positives wast
 
 ## Step-by-step Process
 
-### 1. Build an exclusion list using closingIssuesReferences
-
-PRs that use GitHub closing keywords (`closes`, `fixes`, `resolves`) automatically close the linked issue when merged. If such an issue is still open, it means a maintainer **intentionally reopened it** because the PR did not fully resolve it. Use this API to identify these issues so you can **skip them**:
-
-```bash
-gh api graphql -f query='{
-  repository(owner:"OWNER", name:"REPO") {
-    pullRequests(states:MERGED, last:100, orderBy:{field:CREATED_AT, direction:DESC}) {
-      nodes {
-        number title mergedAt
-        closingIssuesReferences(first:10) {
-          nodes { number title state }
-        }
-      }
-      pageInfo { startCursor hasPreviousPage }
-    }
-  }
-}' --jq '.data.repository.pullRequests.nodes[] | select(.closingIssuesReferences.nodes | length > 0) | {pr: .number, prTitle: .title, mergedAt: .mergedAt, issues: [.closingIssuesReferences.nodes[] | select(.state == "OPEN") | {number: .number, title: .title}]} | select(.issues | length > 0)'
-```
-
-Use cursor-based pagination to cover the full PR history. **Do not propose closing these issues** — they were already auto-closed by GitHub and deliberately reopened by maintainers who determined more work was needed.
-
-### 2. Check issue timelines for cross-referenced merged PRs
+### 1. Check issue timelines for cross-referenced merged PRs
 
 For each open issue, check if merged PRs reference it:
 
@@ -41,7 +19,7 @@ gh api repos/OWNER/REPO/issues/{number}/timeline \
 
 This finds PRs that mention the issue without closing keywords — these are the real candidates since they wouldn't have triggered GitHub's auto-close. However, a mention is not a fix; these require deeper investigation via the validation checks below.
 
-### 3. Validate every candidate
+### 2. Validate every candidate
 
 For every issue-PR pair that looks like a match, you **must** perform all of the following checks before proposing closure.
 
@@ -107,11 +85,11 @@ Reasons the fix may not be in the codebase despite a merged PR:
 
 For bug fixes, confirm the specific code change (e.g. the added validation, the changed conditional, the new error handling) is still present. For feature requests, confirm the feature exists and works as described. Do not rely solely on the PR having been merged.
 
-### 4. Title matching is not evidence
+### 3. Title matching is not evidence
 
 Never propose closing an issue solely because a PR title seems related. PR and issue titles can look similar while addressing different aspects of the same area. Always verify through the checks above.
 
-### 5. Batch efficiently but validate individually
+### 4. Batch efficiently but validate individually
 
 When scanning hundreds of issues, it's appropriate to use batch API calls and parallel agents for the initial scan. But the validation steps (Checks A-E) must be done for each individual candidate — do not skip validation to save time.
 
