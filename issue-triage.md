@@ -89,13 +89,31 @@ Watch out for:
 - **Related but different**: A PR that touches the same area of code but solves a different problem. Title similarity is not sufficient evidence.
 - **Multi-part issues**: Issues with checkboxes, numbered stages, or multiple requests where the PR only addresses some of them.
 
+#### Check E: Verify the fix exists in the current codebase
+
+This is the most important check. PR metadata and descriptions can be misleading — the actual code is the ground truth. Clone the repo (or read files via the GitHub API) and verify that the fix described by the PR is present in the current default branch:
+
+```bash
+# Check the files the PR changed still contain the fix
+gh pr view {PR_NUMBER} --repo OWNER/REPO --json files --jq '.files[].path'
+# Then read the relevant files and confirm the fix is present
+gh api repos/OWNER/REPO/contents/{FILE_PATH} --jq '.content' | base64 -d
+```
+
+Reasons the fix may not be in the codebase despite a merged PR:
+- **The PR was later reverted** — check `git log` for revert commits referencing the PR.
+- **The code was refactored or rewritten** — the fix may have been lost in a subsequent rewrite of the same area.
+- **The fix was on a non-default branch** — the PR may have merged into a feature branch, not `main`.
+
+For bug fixes, confirm the specific code change (e.g. the added validation, the changed conditional, the new error handling) is still present. For feature requests, confirm the feature exists and works as described. Do not rely solely on the PR having been merged.
+
 ### 4. Title matching is not evidence
 
 Never propose closing an issue solely because a PR title seems related. PR and issue titles can look similar while addressing different aspects of the same area. Always verify through the checks above.
 
 ### 5. Batch efficiently but validate individually
 
-When scanning hundreds of issues, it's appropriate to use batch API calls and parallel agents for the initial scan. But the validation step (Checks A-D) must be done for each individual candidate — do not skip validation to save time.
+When scanning hundreds of issues, it's appropriate to use batch API calls and parallel agents for the initial scan. But the validation steps (Checks A-E) must be done for each individual candidate — do not skip validation to save time.
 
 ## Writing Closure Comments
 
@@ -115,3 +133,4 @@ For each issue you want to propose closing, confirm:
 - [ ] The PR body/description addresses the specific concern in the issue body
 - [ ] The PR is not a partial fix (look for "partially", "part of", "some of")
 - [ ] You have read both the issue body and PR body, not just titles
+- [ ] You have checked the current codebase and confirmed the fix is actually present (not reverted, rewritten, or lost)
