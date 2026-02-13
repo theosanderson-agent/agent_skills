@@ -8,9 +8,9 @@ Every closure proposal must be backed by verified evidence. False positives wast
 
 ## Step-by-step Process
 
-### 1. Use the GraphQL closingIssuesReferences API first
+### 1. Build an exclusion list using closingIssuesReferences
 
-This is the most reliable signal. It finds merged PRs that used GitHub closing keywords (`closes`, `fixes`, `resolves`) linked to still-open issues:
+PRs that use GitHub closing keywords (`closes`, `fixes`, `resolves`) automatically close the linked issue when merged. If such an issue is still open, it means a maintainer **intentionally reopened it** because the PR did not fully resolve it. Use this API to identify these issues so you can **skip them**:
 
 ```bash
 gh api graphql -f query='{
@@ -28,7 +28,7 @@ gh api graphql -f query='{
 }' --jq '.data.repository.pullRequests.nodes[] | select(.closingIssuesReferences.nodes | length > 0) | {pr: .number, prTitle: .title, mergedAt: .mergedAt, issues: [.closingIssuesReferences.nodes[] | select(.state == "OPEN") | {number: .number, title: .title}]} | select(.issues | length > 0)'
 ```
 
-Use cursor-based pagination to cover the full PR history. Any open issues found here were auto-closed by GitHub and then **intentionally reopened by maintainers** — these should generally be left open unless circumstances have changed.
+Use cursor-based pagination to cover the full PR history. **Do not propose closing these issues** — they were already auto-closed by GitHub and deliberately reopened by maintainers who determined more work was needed.
 
 ### 2. Check issue timelines for cross-referenced merged PRs
 
@@ -39,7 +39,7 @@ gh api repos/OWNER/REPO/issues/{number}/timeline \
   --jq '[.[] | select(.event == "cross-referenced") | select(.source.issue.pull_request != null) | select(.source.issue.state == "closed") | {pr: .source.issue.number, title: .source.issue.title}]'
 ```
 
-This finds PRs that mention the issue but didn't use closing keywords. These require deeper investigation — a mention is not a fix.
+This finds PRs that mention the issue without closing keywords — these are the real candidates since they wouldn't have triggered GitHub's auto-close. However, a mention is not a fix; these require deeper investigation via the validation checks below.
 
 ### 3. Validate every candidate
 
