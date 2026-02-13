@@ -93,9 +93,21 @@ Never propose closing an issue solely because a PR title seems related. PR and i
 
 When scanning hundreds of issues, it's appropriate to use batch API calls and parallel agents for the initial scan. But the validation steps (Checks A-E) must be done for each individual candidate — do not skip validation to save time.
 
+## Present findings before taking action
+
+**Never** post comments, add labels, or close issues on GitHub without first presenting your findings to the user and getting explicit approval. Issue triage is a research task — your job is to compile a list of candidates with evidence, then let the user decide what to do.
+
+Present your findings as a table with:
+- Issue number and title
+- The merged PR(s) you believe resolve it
+- A brief explanation of why
+- Your confidence level
+
+Wait for the user to review and tell you which issues to act on. They may want to comment and label all of them, some of them, or none. They may also want to adjust the wording of comments before they are posted. Actions on GitHub (comments, labels, closing) are visible to the whole project and cannot be easily undone — always get sign-off first.
+
 ## Writing Closure Comments
 
-When proposing closure:
+When the user approves posting comments:
 - Reference the specific merged PR(s) with `#NUMBER`
 - Briefly explain why the PR resolves the issue
 - For medium-confidence cases, explicitly ask the maintainer to verify
@@ -112,3 +124,4 @@ For each issue you want to propose closing, confirm:
 - [ ] The PR is not a partial fix (look for "partially", "part of", "some of")
 - [ ] You have read both the issue body and PR body, not just titles
 - [ ] You have checked the current codebase and confirmed the fix is actually present (not reverted, rewritten, or lost)
+- [ ] You have presented your findings to the user and received approval before posting anything to GitHub
